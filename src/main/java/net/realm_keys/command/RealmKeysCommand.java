@@ -1,0 +1,116 @@
+package net.realm_keys.command;
+
+import com.mojang.brigadier.CommandDispatcher;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.ResourceLocationArgument;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.realm_keys.config.RealmKeysConfig;
+
+import java.util.Collection;
+
+public class RealmKeysCommand {
+
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("realmkeys")
+                .requires(source -> source.hasPermission(2))
+
+                .then(Commands.literal("global")
+                        .then(Commands.literal("unlock")
+                                .then(Commands.argument("dimension", ResourceLocationArgument.id())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggestResource(context.getSource().getServer().levelKeys().stream().map(key -> key.location()), builder))
+                                        .executes(context -> {
+                                            ResourceLocation dimId = ResourceLocationArgument.getId(context, "dimension");
+                                            if (RealmKeysConfig.unlockGlobal(dimId.toString())) {
+                                                context.getSource().sendSuccess(() -> Component.literal("Глобально відкрито: " + dimId).withStyle(ChatFormatting.GREEN), true);
+                                            } else {
+                                                context.getSource().sendFailure(Component.literal("Вимір " + dimId + " вже був глобально відкритий."));
+                                            }
+                                            return 1;
+                                        })
+                                )
+                        )
+                        .then(Commands.literal("lock")
+                                .then(Commands.argument("dimension", ResourceLocationArgument.id())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggestResource(context.getSource().getServer().levelKeys().stream().map(key -> key.location()), builder))
+                                        .executes(context -> {
+                                            ResourceLocation dimId = ResourceLocationArgument.getId(context, "dimension");
+                                            if (RealmKeysConfig.lockGlobal(dimId.toString())) {
+                                                context.getSource().sendSuccess(() -> Component.literal("Глобально закрито: " + dimId).withStyle(ChatFormatting.RED), true);
+                                            } else {
+                                                context.getSource().sendFailure(Component.literal("Вимір " + dimId + " вже був глобально закритий."));
+                                            }
+                                            return 1;
+                                        })
+                                )
+                        )
+                )
+
+                .then(Commands.literal("player")
+                        .then(Commands.argument("targets", EntityArgument.players())
+                                .then(Commands.literal("unlock")
+                                        .then(Commands.argument("dimension", ResourceLocationArgument.id())
+                                                .suggests((context, builder) -> SharedSuggestionProvider.suggestResource(context.getSource().getServer().levelKeys().stream().map(key -> key.location()), builder))
+                                                .executes(context -> {
+                                                    Collection<ServerPlayer> players = EntityArgument.getPlayers(context, "targets");
+                                                    ResourceLocation dimId = ResourceLocationArgument.getId(context, "dimension");
+                                                    for (ServerPlayer player : players) {
+                                                        if (RealmKeysConfig.unlockForPlayer(player.getUUID(), dimId.toString())) {
+                                                            context.getSource().sendSuccess(() -> Component.literal("Відкрито " + dimId + " для гравця " + player.getName().getString()).withStyle(ChatFormatting.GREEN), true);
+                                                        }
+                                                    }
+                                                    return players.size();
+                                                })
+                                        )
+                                )
+                                .then(Commands.literal("lock")
+                                        .then(Commands.argument("dimension", ResourceLocationArgument.id())
+                                                .suggests((context, builder) -> SharedSuggestionProvider.suggestResource(context.getSource().getServer().levelKeys().stream().map(key -> key.location()), builder))
+                                                .executes(context -> {
+                                                    Collection<ServerPlayer> players = EntityArgument.getPlayers(context, "targets");
+                                                    ResourceLocation dimId = ResourceLocationArgument.getId(context, "dimension");
+                                                    for (ServerPlayer player : players) {
+                                                        if (RealmKeysConfig.lockForPlayer(player.getUUID(), dimId.toString())) {
+                                                            context.getSource().sendSuccess(() -> Component.literal("Закрито " + dimId + " для гравця " + player.getName().getString()).withStyle(ChatFormatting.RED), true);
+                                                        }
+                                                    }
+                                                    return players.size();
+                                                })
+                                        )
+                                )
+                        )
+                )
+
+                .then(Commands.literal("mode")
+                        .then(Commands.literal("global")
+                                .executes(context -> {
+                                    RealmKeysConfig.getInstance().perPlayerProgression = false;
+                                    RealmKeysConfig.save();
+                                    context.getSource().sendSuccess(() -> Component.literal("Режим змінено: Глобальна прогресія (спільно для всіх)").withStyle(ChatFormatting.YELLOW), true);
+                                    return 1;
+                                })
+                        )
+                        .then(Commands.literal("per_player")
+                                .executes(context -> {
+                                    RealmKeysConfig.getInstance().perPlayerProgression = true;
+                                    RealmKeysConfig.save();
+                                    context.getSource().sendSuccess(() -> Component.literal("Режим змінено: Індивідуальна прогресія (персональний доступ)").withStyle(ChatFormatting.YELLOW), true);
+                                    return 1;
+                                })
+                        )
+                )
+                .then(Commands.literal("reload")
+                        .executes(context -> {
+                            RealmKeysConfig.load();
+                            context.getSource().sendSuccess(() -> Component.literal("Конфіг Realm Keys перезавантажено!").withStyle(ChatFormatting.AQUA), true);
+                            return 1;
+                        })
+                )
+        );
+    }
+}

@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 1,
+	"id": "realm-keys",
+	"version": "1.0.0",
+	"name": "Realm Keys",
+	"description": "mod that locks dimensions",
+	"authors": [
+		"Me!"
+	],
+	"contact": {
+		"homepage": "",
+		"sources": ""
+	},
+	"license": "MIT",
+	"icon": "assets/realm-keys/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"net.realm_keys.RealmKeys"
+		],
+		"client": [
+			"net.realm_keys.client.RealmKeysClient"
+		],
+		"fabric-datagen": [
+			"net.realm_keys.client.RealmKeysDataGenerator"
+		]
+	},
+	"mixins": [
+		"realm-keys.mixins.json",
+		{
+			"config": "realm-keys.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~1.21.1",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

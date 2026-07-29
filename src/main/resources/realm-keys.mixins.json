@@ -1,0 +1,16 @@
+{
+	"required": true,
+	"package": "net.realm_keys.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+      "ExampleMixin",
+      "PlayerTeleportMixin"
+
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
