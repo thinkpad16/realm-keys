@@ -1,11 +1,12 @@
 package net.realm_keys.command;
 
+import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.CommandDispatcher;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
-import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
@@ -32,8 +33,6 @@ public class RealmKeysCommand {
                                             ResourceLocation dimId = ResourceLocationArgument.getId(context, "dimension");
                                             if (RealmKeysConfig.unlockGlobal(dimId.toString())) {
                                                 context.getSource().sendSuccess(() -> Component.literal("Глобально відкрито: " + dimId).withStyle(ChatFormatting.GREEN), true);
-
-                                                // Програємо ефекти ВСІМ гравцям на сервері
                                                 context.getSource().getServer().getPlayerList().getPlayers().forEach(p -> playUnlockEffects(p, dimId));
                                             } else {
                                                 context.getSource().sendFailure(Component.literal("Вимір " + dimId + " вже був глобально відкритий."));
@@ -59,22 +58,25 @@ public class RealmKeysCommand {
                 )
 
                 .then(Commands.literal("player")
-                        .then(Commands.argument("targets", EntityArgument.players())
+                        .then(Commands.argument("targets", GameProfileArgument.gameProfile())
                                 .then(Commands.literal("unlock")
                                         .then(Commands.argument("dimension", ResourceLocationArgument.id())
                                                 .suggests((context, builder) -> SharedSuggestionProvider.suggestResource(context.getSource().getServer().levelKeys().stream().map(key -> key.location()), builder))
                                                 .executes(context -> {
-                                                    Collection<ServerPlayer> players = EntityArgument.getPlayers(context, "targets");
+                                                    Collection<GameProfile> profiles = GameProfileArgument.getGameProfiles(context, "targets");
                                                     ResourceLocation dimId = ResourceLocationArgument.getId(context, "dimension");
-                                                    for (ServerPlayer player : players) {
-                                                        if (RealmKeysConfig.unlockForPlayer(player.getUUID(), dimId.toString())) {
-                                                            context.getSource().sendSuccess(() -> Component.literal("Відкрито " + dimId + " для гравця " + player.getName().getString()).withStyle(ChatFormatting.GREEN), true);
 
-                                                            // Програємо ефекти ТІЛЬКИ цьому гравцю
-                                                            playUnlockEffects(player, dimId);
+                                                    for (GameProfile profile : profiles) {
+                                                        if (RealmKeysConfig.unlockForPlayer(profile.getId(), dimId.toString())) {
+                                                            context.getSource().sendSuccess(() -> Component.literal("Відкрито " + dimId + " для " + profile.getName()).withStyle(ChatFormatting.GREEN), true);
+
+                                                            ServerPlayer onlinePlayer = context.getSource().getServer().getPlayerList().getPlayer(profile.getId());
+                                                            if (onlinePlayer != null) {
+                                                                playUnlockEffects(onlinePlayer, dimId);
+                                                            }
                                                         }
                                                     }
-                                                    return players.size();
+                                                    return profiles.size();
                                                 })
                                         )
                                 )
@@ -82,14 +84,15 @@ public class RealmKeysCommand {
                                         .then(Commands.argument("dimension", ResourceLocationArgument.id())
                                                 .suggests((context, builder) -> SharedSuggestionProvider.suggestResource(context.getSource().getServer().levelKeys().stream().map(key -> key.location()), builder))
                                                 .executes(context -> {
-                                                    Collection<ServerPlayer> players = EntityArgument.getPlayers(context, "targets");
+                                                    Collection<GameProfile> profiles = GameProfileArgument.getGameProfiles(context, "targets");
                                                     ResourceLocation dimId = ResourceLocationArgument.getId(context, "dimension");
-                                                    for (ServerPlayer player : players) {
-                                                        if (RealmKeysConfig.lockForPlayer(player.getUUID(), dimId.toString())) {
-                                                            context.getSource().sendSuccess(() -> Component.literal("Закрито " + dimId + " для гравця " + player.getName().getString()).withStyle(ChatFormatting.RED), true);
+
+                                                    for (GameProfile profile : profiles) {
+                                                        if (RealmKeysConfig.lockForPlayer(profile.getId(), dimId.toString())) {
+                                                            context.getSource().sendSuccess(() -> Component.literal("Закрито " + dimId + " для " + profile.getName()).withStyle(ChatFormatting.RED), true);
                                                         }
                                                     }
-                                                    return players.size();
+                                                    return profiles.size();
                                                 })
                                         )
                                 )
@@ -99,7 +102,6 @@ public class RealmKeysCommand {
                 .then(Commands.literal("chunk")
                         .then(Commands.literal("unlock")
                                 .executes(context -> {
-                                    // Отримуємо гравця, який ввів команду
                                     ServerPlayer player = context.getSource().getPlayerOrException();
                                     String dimId = player.serverLevel().dimension().location().toString();
                                     int cX = player.chunkPosition().x;
@@ -130,12 +132,41 @@ public class RealmKeysCommand {
                         )
                 )
 
+                .then(Commands.literal("spawn")
+                        .then(Commands.literal("set")
+                                .then(Commands.argument("dimension", ResourceLocationArgument.id())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggestResource(context.getSource().getServer().levelKeys().stream().map(key -> key.location()), builder))
+                                        .executes(context -> {
+                                            ServerPlayer player = context.getSource().getPlayerOrException();
+                                            ResourceLocation dimId = ResourceLocationArgument.getId(context, "dimension");
+                                            String coords = player.getX() + ", " + player.getY() + ", " + player.getZ();
+                                            RealmKeysConfig.getInstance().customSpawns.put(dimId.toString(), coords);
+                                            RealmKeysConfig.save();
+                                            context.getSource().sendSuccess(() -> Component.literal("Safe spawn set to " + coords + " for " + dimId).withStyle(ChatFormatting.GREEN), true);
+                                            return 1;
+                                        })
+                                )
+                        )
+                        .then(Commands.literal("clear")
+                                .then(Commands.argument("dimension", ResourceLocationArgument.id())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggestResource(context.getSource().getServer().levelKeys().stream().map(key -> key.location()), builder))
+                                        .executes(context -> {
+                                            ResourceLocation dimId = ResourceLocationArgument.getId(context, "dimension");
+                                            RealmKeysConfig.getInstance().customSpawns.remove(dimId.toString());
+                                            RealmKeysConfig.save();
+                                            context.getSource().sendSuccess(() -> Component.literal("Safe spawn cleared for " + dimId).withStyle(ChatFormatting.GREEN), true);
+                                            return 1;
+                                        })
+                                )
+                        )
+                )
+
                 .then(Commands.literal("mode")
                         .then(Commands.literal("global")
                                 .executes(context -> {
                                     RealmKeysConfig.getInstance().perPlayerProgression = false;
                                     RealmKeysConfig.save();
-                                    context.getSource().sendSuccess(() -> Component.literal("Режим змінено: Глобальна прогресія (спільно для всіх)").withStyle(ChatFormatting.YELLOW), true);
+                                    context.getSource().sendSuccess(() -> Component.literal("Режим змінено: Глобальна прогресія").withStyle(ChatFormatting.YELLOW), true);
                                     return 1;
                                 })
                         )
@@ -143,7 +174,7 @@ public class RealmKeysCommand {
                                 .executes(context -> {
                                     RealmKeysConfig.getInstance().perPlayerProgression = true;
                                     RealmKeysConfig.save();
-                                    context.getSource().sendSuccess(() -> Component.literal("Режим змінено: Індивідуальна прогресія (персональний доступ)").withStyle(ChatFormatting.YELLOW), true);
+                                    context.getSource().sendSuccess(() -> Component.literal("Режим змінено: Індивідуальна прогресія").withStyle(ChatFormatting.YELLOW), true);
                                     return 1;
                                 })
                         )

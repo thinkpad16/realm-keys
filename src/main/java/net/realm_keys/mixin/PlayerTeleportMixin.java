@@ -9,14 +9,47 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.portal.DimensionTransition;
+import net.minecraft.world.phys.Vec3;
 import net.realm_keys.config.RealmKeysConfig;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(ServerPlayer.class)
 public abstract class PlayerTeleportMixin {
+
+    @ModifyVariable(method = "changeDimension(Lnet/minecraft/world/level/portal/DimensionTransition;)Lnet/minecraft/world/entity/Entity;", at = @At("HEAD"), argsOnly = true)
+    private DimensionTransition modifyDimensionTransition(DimensionTransition transition) {
+        if (transition == null || transition.newLevel() == null) return transition;
+
+        RealmKeysConfig config = RealmKeysConfig.getInstance();
+        if (!config.enableCustomSpawns) return transition;
+
+        String targetDimId = transition.newLevel().dimension().location().toString();
+
+        if (config.customSpawns.containsKey(targetDimId)) {
+            String[] coords = config.customSpawns.get(targetDimId).split(",");
+            if (coords.length >= 3) {
+                try {
+                    double x = Double.parseDouble(coords[0].trim());
+                    double y = Double.parseDouble(coords[1].trim());
+                    double z = Double.parseDouble(coords[2].trim());
+                    return new DimensionTransition(
+                            transition.newLevel(),
+                            new Vec3(x, y, z),
+                            Vec3.ZERO,
+                            transition.yRot(),
+                            transition.xRot(),
+                            transition.postDimensionTransition()
+                    );
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+        return transition;
+    }
 
     @Inject(method = "changeDimension(Lnet/minecraft/world/level/portal/DimensionTransition;)Lnet/minecraft/world/entity/Entity;", at = @At("HEAD"), cancellable = true)
     private void onBeforeChangeDimension(DimensionTransition transition, CallbackInfoReturnable<Entity> cir) {
@@ -64,12 +97,10 @@ public abstract class PlayerTeleportMixin {
 
             if (config.enableFirstDiscovererBroadcast) {
                 if (!config.firstDiscoverers.containsKey(targetDimId)) {
-
                     config.firstDiscoverers.put(targetDimId, playerName);
                     RealmKeysConfig.save();
 
                     String dimName = config.welcomeTitles.getOrDefault(targetDimId, targetDimId);
-
                     String broadcastMsg = config.firstDiscovererMessage
                             .replace("%player%", playerName)
                             .replace("%dimension%", dimName)
