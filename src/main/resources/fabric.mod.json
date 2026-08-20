@@ -3,13 +3,13 @@
 	"id": "realm-keys",
 	"version": "1.0.0",
 	"name": "Realm Keys",
-	"description": "mod that locks dimensions",
+	"description": "Locks dimensions behind global or per-player progression, with public-portal chunks, custom spawns and welcome/discovery messages.",
 	"authors": [
 		"Me!"
 	],
 	"contact": {
-		"homepage": "",
-		"sources": ""
+		"homepage": "https://github.com/thinkpad16/realm-keys",
+		"sources": "https://github.com/thinkpad16/realm-keys"
 	},
 	"license": "MIT",
 	"icon": "assets/realm-keys/icon.png",
@@ -20,6 +20,9 @@
 		],
 		"client": [
 			"net.realm_keys.client.RealmKeysClient"
+		],
+		"modmenu": [
+			"net.realm_keys.client.RealmKeysModMenu"
 		],
 		"fabric-datagen": [
 			"net.realm_keys.client.RealmKeysDataGenerator"
@@ -33,9 +36,13 @@
 		}
 	],
 	"depends": {
-		"fabricloader": ">=0.19.3",
+		"fabricloader": ">=0.19.2",
 		"minecraft": "~1.21.1",
 		"java": ">=21",
 		"fabric-api": "*"
+	},
+	"suggests": {
+		"modmenu": "*",
+		"cloth-config": "*"
 	}
 }

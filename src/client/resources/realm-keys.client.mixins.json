@@ -2,9 +2,7 @@
 	"required": true,
 	"package": "net.realm_keys.client.mixin",
 	"compatibilityLevel": "JAVA_21",
-	"client": [
-		"ExampleClientMixin"
-	],
+	"client": [],
 	"injectors": {
 		"defaultRequire": 1
 	},

@@ -3,22 +3,31 @@ package net.realm_keys.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import net.fabricmc.loader.api.FabricLoader;
-import net.realm_keys.RealmKeys;
 
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
 
 public class RealmKeysConfig {
-    private static final File FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "realm_keys.json");
+    private static final File FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "realm_keys_settings.json");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
+    // --- Progression ---
     public boolean perPlayerProgression = true;
+
+    // Dimensions listed here never require an unlock, regardless of lock state.
+    // Empty this list to require a key for the overworld too.
+    public List<String> exemptDimensions = new ArrayList<>(List.of("minecraft:overworld"));
+
+    // --- Commands ---
+    // Permission level (op level) required to run /realmkeys admin subcommands.
+    public int commandPermissionLevel = 2;
+
+    // --- Feature toggles ---
     public boolean enableUnlockEffects = true;
     public boolean enableBlockEffects = true;
     public boolean enableBlockMessage = true;
@@ -26,16 +35,89 @@ public class RealmKeysConfig {
     public boolean enableFirstDiscovererBroadcast = true;
     public boolean enableCustomSpawns = true;
 
-    public String firstDiscovererMessage = "&6[!] &l%player% &eпершим розпечатав ворота до %dimension%&e!";
+    // --- Messages ---
+    // Empty by default: built-in messages come from the lang files (net.realm_keys.util.RealmKeysText).
+    // Set a value here only to override the translated default for that dimension.
+    public String firstDiscovererMessage = "";
 
-    public Set<String> globalUnlockedDimensions = new HashSet<>();
-    public Map<String, Set<String>> playerUnlockedDimensions = new HashMap<>();
-    public Map<String, Set<String>> unlockedChunks = new HashMap<>();
-    public Map<String, String> firstDiscoverers = new HashMap<>();
-    public Map<String, String> customSpawns = new HashMap<>();
+    // Fallback title/message applied to any dimension that has no per-dimension entry below
+    // and isn't one of the built-in flavored dimensions (Nether/End). Empty disables the fallback.
+    // Supports %dimension% and & color codes.
+    public String defaultWelcomeTitle = "";
+    public String defaultLockedMessage = "";
 
     public Map<String, String> welcomeTitles = new HashMap<>();
     public Map<String, String> lockedMessages = new HashMap<>();
+
+    // --- Effects ---
+    // Sound/particle ids use "namespace:path" registry names (e.g. "minecraft:entity.enderman.teleport").
+    // Unknown ids are logged and skipped, so a typo won't crash the server.
+    public List<SoundConfig> unlockSounds = defaultUnlockSounds();
+    public List<SoundConfig> discovererSounds = defaultDiscovererSounds();
+    public List<SoundConfig> blockSounds = defaultBlockSounds();
+    public List<ParticleConfig> blockParticles = defaultBlockParticles();
+    public double blockKnockbackStrength = 1.0;
+
+    private static List<SoundConfig> defaultUnlockSounds() {
+        return new ArrayList<>(List.of(
+                new SoundConfig("minecraft:block.end_portal.spawn", 1.0f, 1.0f),
+                new SoundConfig("minecraft:ui.toast.challenge_complete", 1.0f, 1.0f)
+        ));
+    }
+
+    private static List<SoundConfig> defaultDiscovererSounds() {
+        return new ArrayList<>(List.of(
+                new SoundConfig("minecraft:ui.toast.challenge_complete", 1.0f, 1.0f)
+        ));
+    }
+
+    private static List<SoundConfig> defaultBlockSounds() {
+        return new ArrayList<>(List.of(
+                new SoundConfig("minecraft:item.shield.block", 1.0f, 0.5f),
+                new SoundConfig("minecraft:entity.enderman.teleport", 0.5f, 0.5f)
+        ));
+    }
+
+    private static List<ParticleConfig> defaultBlockParticles() {
+        return new ArrayList<>(List.of(
+                new ParticleConfig("minecraft:large_smoke", 20, 0.5, 0.5, 0.5, 0.05),
+                new ParticleConfig("minecraft:witch", 10, 0.5, 0.5, 0.5, 0.1)
+        ));
+    }
+
+    public static class SoundConfig {
+        public String sound;
+        public float volume;
+        public float pitch;
+
+        public SoundConfig() {}
+
+        public SoundConfig(String sound, float volume, float pitch) {
+            this.sound = sound;
+            this.volume = volume;
+            this.pitch = pitch;
+        }
+    }
+
+    public static class ParticleConfig {
+        public String particle;
+        public int count;
+        public double spreadX;
+        public double spreadY;
+        public double spreadZ;
+        public double speed;
+
+        public ParticleConfig() {}
+
+        public ParticleConfig(String particle, int count, double spreadX, double spreadY, double spreadZ, double speed) {
+            this.particle = particle;
+            this.count = count;
+            this.spreadX = spreadX;
+            this.spreadY = spreadY;
+            this.spreadZ = spreadZ;
+            this.speed = speed;
+        }
+    }
 
     private static RealmKeysConfig instance;
 
@@ -45,95 +127,30 @@ public class RealmKeysConfig {
                 instance = GSON.fromJson(reader, RealmKeysConfig.class);
             } catch (Exception e) {
                 instance = new RealmKeysConfig();
-                generateDefaults();
+                save();
             }
         } else {
             instance = new RealmKeysConfig();
-            generateDefaults();
+            save();
         }
 
-        if (instance.playerUnlockedDimensions == null) instance.playerUnlockedDimensions = new HashMap<>();
-        if (instance.globalUnlockedDimensions == null) instance.globalUnlockedDimensions = new HashSet<>();
-        if (instance.unlockedChunks == null) instance.unlockedChunks = new HashMap<>();
+        if (instance.exemptDimensions == null) instance.exemptDimensions = new ArrayList<>();
         if (instance.welcomeTitles == null) instance.welcomeTitles = new HashMap<>();
         if (instance.lockedMessages == null) instance.lockedMessages = new HashMap<>();
-        if (instance.firstDiscoverers == null) instance.firstDiscoverers = new HashMap<>();
-        if (instance.customSpawns == null) instance.customSpawns = new HashMap<>();
-    }
-
-    private static void generateDefaults() {
-        instance.globalUnlockedDimensions.add("minecraft:overworld");
-        instance.firstDiscoverers.put("minecraft:overworld", "Система");
-
-        instance.welcomeTitles.put("minecraft:the_nether", "&c🔥 Пекельні Глибини 🔥");
-        instance.welcomeTitles.put("minecraft:the_end", "&5🌌 Порожнеча Енду 🌌");
-        instance.welcomeTitles.put("twilightforest:twilight_forest", "&2🌲 Сутінковий Ліс 🌲");
-
-        instance.lockedMessages.put("minecraft:the_nether", "&4Брама закрита! Тобі потрібно знайти вогняний ключ.");
-        instance.lockedMessages.put("minecraft:the_end", "&5Шлях у Порожнечу ще не знайдено.");
-
-        instance.customSpawns.put("minecraft:the_nether", "10.0, 64.0, 10.0");
-
-        save();
+        if (instance.unlockSounds == null) instance.unlockSounds = new ArrayList<>();
+        if (instance.discovererSounds == null) instance.discovererSounds = new ArrayList<>();
+        if (instance.blockSounds == null) instance.blockSounds = new ArrayList<>();
+        if (instance.blockParticles == null) instance.blockParticles = new ArrayList<>();
     }
 
     public static void save() {
         try (FileWriter writer = new FileWriter(FILE)) {
             GSON.toJson(instance, writer);
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
     }
 
     public static RealmKeysConfig getInstance() {
+        if (instance == null) load();
         return instance;
-    }
-
-    public static boolean hasAccess(UUID playerUuid, String dimensionId) {
-        if (instance.globalUnlockedDimensions.contains(dimensionId)) return true;
-        if (instance.perPlayerProgression) {
-            Set<String> playerDims = instance.playerUnlockedDimensions.get(playerUuid.toString());
-            return playerDims != null && playerDims.contains(dimensionId);
-        }
-        return false;
-    }
-
-    public static boolean isChunkUnlocked(String currentDimId, int chunkX, int chunkZ) {
-        if (instance == null || !instance.unlockedChunks.containsKey(currentDimId)) return false;
-        String chunkPos = chunkX + "," + chunkZ;
-        return instance.unlockedChunks.get(currentDimId).contains(chunkPos);
-    }
-
-    public static boolean unlockChunk(String currentDimId, int chunkX, int chunkZ) {
-        Set<String> chunks = instance.unlockedChunks.computeIfAbsent(currentDimId, k -> new HashSet<>());
-        if (chunks.add(chunkX + "," + chunkZ)) { save(); return true; } return false;
-    }
-
-    public static boolean lockChunk(String currentDimId, int chunkX, int chunkZ) {
-        Set<String> chunks = instance.unlockedChunks.get(currentDimId);
-        if (chunks != null && chunks.remove(chunkX + "," + chunkZ)) {
-            if (chunks.isEmpty()) instance.unlockedChunks.remove(currentDimId);
-            save(); return true;
-        } return false;
-    }
-
-    public static boolean unlockGlobal(String dimensionId) {
-        if (instance.globalUnlockedDimensions.add(dimensionId)) { save(); return true; } return false;
-    }
-
-    public static boolean lockGlobal(String dimensionId) {
-        if (instance.globalUnlockedDimensions.remove(dimensionId)) { save(); return true; } return false;
-    }
-
-    public static boolean unlockForPlayer(UUID playerUuid, String dimensionId) {
-        Set<String> dims = instance.playerUnlockedDimensions.computeIfAbsent(playerUuid.toString(), k -> new HashSet<>());
-        if (dims.add(dimensionId)) { save(); return true; } return false;
-    }
-
-    public static boolean lockForPlayer(UUID playerUuid, String dimensionId) {
-        Set<String> dims = instance.playerUnlockedDimensions.get(playerUuid.toString());
-        if (dims != null && dims.remove(dimensionId)) {
-            if (dims.isEmpty()) instance.playerUnlockedDimensions.remove(playerUuid.toString());
-            save(); return true;
-        } return false;
     }
 }

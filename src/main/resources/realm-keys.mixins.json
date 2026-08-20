@@ -2,11 +2,10 @@
 	"required": true,
 	"package": "net.realm_keys.mixin",
 	"compatibilityLevel": "JAVA_21",
-	"mixins": [
-      "ExampleMixin",
-      "PlayerTeleportMixin"
-
-	],
+    "mixins": [
+      "PlayerTeleportMixin",
+      "PortalCaptureMixin"
+    ],
 	"injectors": {
 		"defaultRequire": 1
 	},

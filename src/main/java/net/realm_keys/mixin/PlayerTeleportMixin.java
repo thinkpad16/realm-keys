@@ -1,16 +1,17 @@
 package net.realm_keys.mixin;
 
 import net.minecraft.ChatFormatting;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.portal.DimensionTransition;
 import net.minecraft.world.phys.Vec3;
 import net.realm_keys.config.RealmKeysConfig;
+import net.realm_keys.data.RealmKeysData;
+import net.realm_keys.util.PortalTeleportContext;
+import net.realm_keys.util.RealmKeysEffects;
+import net.realm_keys.util.RealmKeysText;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -25,17 +26,20 @@ public abstract class PlayerTeleportMixin {
         if (transition == null || transition.newLevel() == null) return transition;
 
         RealmKeysConfig config = RealmKeysConfig.getInstance();
-        if (!config.enableCustomSpawns) return transition;
+        if (!config.enableCustomSpawns || !PortalTeleportContext.isPortalTeleport()) return transition;
 
+        ServerPlayer player = (ServerPlayer) (Object) this;
+        RealmKeysData data = RealmKeysData.getServerState(player.serverLevel().getServer());
         String targetDimId = transition.newLevel().dimension().location().toString();
 
-        if (config.customSpawns.containsKey(targetDimId)) {
-            String[] coords = config.customSpawns.get(targetDimId).split(",");
+        if (data.customSpawns.containsKey(targetDimId)) {
+            String[] coords = data.customSpawns.get(targetDimId).split(",");
             if (coords.length >= 3) {
                 try {
                     double x = Double.parseDouble(coords[0].trim());
                     double y = Double.parseDouble(coords[1].trim());
                     double z = Double.parseDouble(coords[2].trim());
+
                     return new DimensionTransition(
                             transition.newLevel(),
                             new Vec3(x, y, z),
@@ -44,8 +48,7 @@ public abstract class PlayerTeleportMixin {
                             transition.xRot(),
                             transition.postDimensionTransition()
                     );
-                } catch (NumberFormatException ignored) {
-                }
+                } catch (NumberFormatException ignored) {}
             }
         }
         return transition;
@@ -61,25 +64,23 @@ public abstract class PlayerTeleportMixin {
         int currentChunkX = player.chunkPosition().x;
         int currentChunkZ = player.chunkPosition().z;
 
-        if (!currentDimId.equals(targetDimId)) {
-            if (RealmKeysConfig.isChunkUnlocked(currentDimId, currentChunkX, currentChunkZ)) return;
+        RealmKeysData data = RealmKeysData.getServerState(player.serverLevel().getServer());
 
-            if (!RealmKeysConfig.hasAccess(player.getUUID(), targetDimId)) {
+        if (!currentDimId.equals(targetDimId)) {
+            if (data.isChunkUnlocked(currentDimId, currentChunkX, currentChunkZ)) return;
+
+            if (!data.hasAccess(player.getUUID(), targetDimId)) {
                 RealmKeysConfig config = RealmKeysConfig.getInstance();
 
                 if (config.enableBlockMessage) {
-                    String msg = config.lockedMessages.getOrDefault(targetDimId, "&cШлях до &e" + targetDimId + " &cзаблоковано!");
-                    msg = msg.replace("&", "§");
-                    player.displayClientMessage(Component.literal(msg).withStyle(ChatFormatting.BOLD), true);
+                    player.displayClientMessage(RealmKeysText.lockedMessage(targetDimId).withStyle(ChatFormatting.BOLD), true);
                 }
 
                 if (config.enableBlockEffects) {
-                    player.serverLevel().playSound(null, player.blockPosition(), SoundEvents.SHIELD_BLOCK, SoundSource.PLAYERS, 1.0f, 0.5f);
-                    player.serverLevel().playSound(null, player.blockPosition(), SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.5f, 0.5f);
-                    player.knockback(1.0, player.getLookAngle().x, player.getLookAngle().z);
+                    RealmKeysEffects.playWorldSounds(player, config.blockSounds);
+                    player.knockback(config.blockKnockbackStrength, player.getLookAngle().x, player.getLookAngle().z);
                     player.hurtMarked = true;
-                    player.serverLevel().sendParticles(ParticleTypes.LARGE_SMOKE, player.getX(), player.getY() + 1.0, player.getZ(), 20, 0.5, 0.5, 0.5, 0.05);
-                    player.serverLevel().sendParticles(ParticleTypes.WITCH, player.getX(), player.getY() + 1.0, player.getZ(), 10, 0.5, 0.5, 0.5, 0.1);
+                    RealmKeysEffects.spawnParticles(player, config.blockParticles);
                 }
                 cir.setReturnValue(null);
             }
@@ -92,36 +93,26 @@ public abstract class PlayerTeleportMixin {
 
         if (newEntity instanceof ServerPlayer newPlayer) {
             RealmKeysConfig config = RealmKeysConfig.getInstance();
+            RealmKeysData data = RealmKeysData.getServerState(newPlayer.serverLevel().getServer());
             String targetDimId = newPlayer.serverLevel().dimension().location().toString();
             String playerName = newPlayer.getName().getString();
 
             if (config.enableFirstDiscovererBroadcast) {
-                if (!config.firstDiscoverers.containsKey(targetDimId)) {
-                    config.firstDiscoverers.put(targetDimId, playerName);
-                    RealmKeysConfig.save();
+                if (!data.firstDiscoverers.containsKey(targetDimId)) {
+                    data.firstDiscoverers.put(targetDimId, playerName);
+                    data.setDirty();
+                    RealmKeysData.flush(newPlayer.serverLevel().getServer()); // Зберігаємо нове відкриття одразу
 
-                    String dimName = config.welcomeTitles.getOrDefault(targetDimId, targetDimId);
-                    String broadcastMsg = config.firstDiscovererMessage
-                            .replace("%player%", playerName)
-                            .replace("%dimension%", dimName)
-                            .replace("&", "§");
-
-                    newPlayer.serverLevel().getServer().getPlayerList().broadcastSystemMessage(
-                            Component.literal(broadcastMsg), false
-                    );
-
-                    newPlayer.serverLevel().getServer().getPlayerList().getPlayers().forEach(p -> {
-                        p.playNotifySound(SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundSource.MASTER, 1.0f, 1.0f);
-                    });
+                    Component broadcastMsg = RealmKeysText.firstDiscoverer(playerName, targetDimId);
+                    newPlayer.serverLevel().getServer().getPlayerList().broadcastSystemMessage(broadcastMsg, false);
+                    RealmKeysEffects.broadcastNotifySounds(newPlayer.serverLevel().getServer(), config.discovererSounds);
                 }
             }
 
             if (config.enableWelcomeTitles) {
-                if (config.welcomeTitles.containsKey(targetDimId)) {
-                    String titleText = config.welcomeTitles.get(targetDimId).replace("&", "§");
-                    newPlayer.connection.send(new ClientboundSetTitleTextPacket(
-                            Component.literal(titleText)
-                    ));
+                Component title = RealmKeysText.welcomeTitle(targetDimId);
+                if (title != null) {
+                    newPlayer.connection.send(new ClientboundSetTitleTextPacket(title));
                 }
             }
         }
